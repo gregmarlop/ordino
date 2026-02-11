@@ -15,6 +15,7 @@ struct L10n {
     static let download = isSpanish ? "Descarga" : "Download"
     static let upload = isSpanish ? "Subida" : "Upload"
     static let publicIP = "IP"
+    static let uptime = "Uptime"
     static let quit = isSpanish ? "Salir" : "Quit"
     static let wifi = "Wi-Fi"
     static let ethernetAdapter = isSpanish ? "Adaptador Ethernet" : "Ethernet Adapter"
@@ -36,6 +37,7 @@ func formatStats(cpu: Double, ram: Double, gpu: Double, down: Double, up: Double
     if showDown { parts.append(String(format: "↓%6.2fMb", down)) }
     if showUp { parts.append(String(format: "↑%6.2fMb", up)) }
     if showIP { parts.append("IP \(publicIP)") }
+    if showUptime { parts.append("Up \(getUptime())") }
     
     let text = parts.joined(separator: "  ")
     return NSAttributedString(string: text.isEmpty ? "Ordino" : text, attributes: attrs)
@@ -57,6 +59,7 @@ var showRAM = true
 var showDown = true
 var showUp = true
 var showIP = false
+var showUptime = false
 
 // Public IP cache (updated every 5 minutes)
 var publicIP = "..."
@@ -195,6 +198,31 @@ func fetchPublicIP() {
     task.resume()
 }
 
+/// Returns system uptime as formatted string (e.g., "2d 5h" or "5h 23m")
+/// Uses sysctl to get boot time
+func getUptime() -> String {
+    var boottime = timeval()
+    var size = MemoryLayout<timeval>.size
+    var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+    
+    guard sysctl(&mib, 2, &boottime, &size, nil, 0) == 0 else {
+        return "?"
+    }
+    
+    let bootDate = Date(timeIntervalSince1970: Double(boottime.tv_sec))
+    let uptime = Date().timeIntervalSince(bootDate)
+    
+    let days = Int(uptime) / 86400
+    let hours = (Int(uptime) % 86400) / 3600
+    let minutes = (Int(uptime) % 3600) / 60
+    
+    if days > 0 {
+        return "\(days)d \(hours)h"
+    } else {
+        return "\(hours)h \(minutes)m"
+    }
+}
+
 // MARK: - Network Functions
 // Network byte reading uses getifaddrs() with if_data structure
 // Same approach used by Stats app (github.com/exelban/stats)
@@ -306,6 +334,7 @@ class MenuHandler: NSObject {
         if showIP { fetchPublicIP() }
         updateMenu()
     }
+    @objc func toggleUptime() { showUptime.toggle(); updateMenu() }
 }
 
 let handler = MenuHandler()
@@ -377,6 +406,11 @@ func updateMenu() {
     ipItem.target = handler
     ipItem.state = showIP ? .on : .off
     showSubmenu.addItem(ipItem)
+    
+    let uptimeItem = NSMenuItem(title: L10n.uptime, action: #selector(MenuHandler.toggleUptime), keyEquivalent: "")
+    uptimeItem.target = handler
+    uptimeItem.state = showUptime ? .on : .off
+    showSubmenu.addItem(uptimeItem)
     
     showItem.submenu = showSubmenu
     m.addItem(showItem)
